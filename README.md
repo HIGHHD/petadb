@@ -1,4 +1,4 @@
 pocodb
 ======
 
-a orm for golang
+litter orm for golang
