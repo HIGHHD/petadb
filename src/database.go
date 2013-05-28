@@ -16,6 +16,14 @@ type Database struct {
 	IsDebug        bool
 }
 
+type PagedList struct {
+	CurrentPageIndex int
+	PageSize         int
+	List             []interface{}
+	TotalItemCount   int64
+	TotalPageCount   int64
+}
+
 func NewDatabase(dbType string, driverName string, dataSourceName string) Database {
 	return Database{DbType: dbType, DataSourceName: dataSourceName, DriverName: driverName, IsDebug: false}
 }

@@ -1,7 +1,5 @@
 pocodb
 ======
 
-litter orm for golang
+Just a letter ORM for Golang.
 
-
-df dfsdf
