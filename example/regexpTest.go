@@ -11,6 +11,19 @@ func main() {
 	querySql := "SELECT UserId FROM UserInfo WHERE UserName = @0 ORDER BY CreateDate DESC"
 	matchColumnsArr := regColumns.FindSubmatch([]byte(strings.ToLower(querySql)))
 
+	regOrderBy, _ := regexp.Compile("order by (.*)")
+	matchOrderByArr := regOrderBy.FindSubmatch([]byte(strings.ToLower(querySql)))
+
+	for _, v := range matchOrderByArr {
+		fmt.Println(string(v))
+	}
+
+	for _, v := range matchColumnsArr {
+		fmt.Println(string(v))
+	}
+
+	fmt.Println(regOrderBy.ReplaceAllString(strings.ToLower(querySql), ""))
+
 	var columns string
 	var afterFrom string
 	var sqlCount string

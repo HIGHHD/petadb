@@ -16,7 +16,9 @@ func main() {
 	// QuerySbTest()
 	// QueryPrtTest()
 	// FirstTest()
-	DeleteTest()
+	// DeleteTest()
+	// BuildPageSql()
+	PagedListTest()
 }
 
 func InsertTest() {
@@ -90,6 +92,29 @@ func DeleteTest() {
 
 		fmt.Println(id)
 	}
+}
+
+func PagedListTest() {
+	sb := petadb.NewSqlBuilder()
+	sb.Append("SELECT * FROM UserInfo WHERE UserId = @0", 1)
+	pagedList := petadb.PagedList{}
+	pagedList.List = make([]UserInfo, 0)
+	err := database.PagedListSb(&pagedList, 1, 10, &sb)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(pagedList)
+}
+
+func BuildPageSql() {
+	sqlCount, sqlPage, err := database.BuildPagingQueries(10, 10, "SELECT DISTINCT UserId FROM UserInfo WHERE CreateDate > ?")
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(sqlCount)
+	fmt.Println(sqlPage)
 }
 
 type UserInfo struct {

@@ -19,13 +19,60 @@ type Database struct {
 type PagedList struct {
 	CurrentPageIndex int
 	PageSize         int
-	List             []interface{}
+	List             interface{}
 	TotalItemCount   int64
 	TotalPageCount   int64
 }
 
 func NewDatabase(dbType string, driverName string, dataSourceName string) Database {
 	return Database{DbType: dbType, DataSourceName: dataSourceName, DriverName: driverName, IsDebug: false}
+}
+
+func (database *Database) PagedListSb(pagedList *PagedList, pageIndex int, pageSize int, sqlBuilder *SqlBuilder) error {
+	return database.PagedList(pagedList, pageIndex, pageSize, sqlBuilder.SQL, sqlBuilder.Args...)
+}
+
+func (database *Database) PagedList(pagedList *PagedList, pageIndex int, pageSize int, query string, args ...interface{}) error {
+	err := errors.New("")
+	sliceDataStruct := reflect.Indirect(reflect.ValueOf(pagedList.List))
+	if sliceDataStruct.Kind() != reflect.Slice {
+		return errors.New("请输入数组的指针对象")
+	}
+
+	sliceElementType := sliceDataStruct.Type().Elem()
+	element := reflect.New(sliceElementType)
+	isStruct := sliceElementType.Kind() == reflect.Struct && sliceElementType.Kind().String() != "time.Time"
+
+	if isStruct {
+		query, err = database.addSelectClause(element.Interface(), query)
+		if err != nil {
+			return err
+		}
+	}
+
+	if query, err = database.ProcessParam(query, args...); err != nil {
+		return err
+	}
+
+	sqlCount, sqlPage, err := database.BuildPagingQueries((pageIndex-1)*pageSize, pageSize, query)
+	if err != nil {
+		return err
+	}
+
+	_, err = database.First(pagedList.TotalItemCount, sqlCount, args...)
+	if err != nil {
+		return err
+	}
+	err = database.Query(pagedList.List, sqlPage, args...)
+	if err != nil {
+		return err
+	}
+
+	pagedList.TotalPageCount = int64(pagedList.TotalItemCount / int64(pageSize))
+	pagedList.PageSize = pageSize
+	pagedList.CurrentPageIndex = pageIndex
+
+	return nil
 }
 
 func (database *Database) FirstBySb(t interface{}, sqlBuilder *SqlBuilder) (bool, error) {
@@ -462,4 +509,62 @@ func (database *Database) escapeParamHolder(paramIndex int) string {
 		return fmt.Sprintf("@%d", paramIndex)
 	}
 	return ""
+}
+
+func (database *Database) BuildPagingQueries(skip int, take int, querySql string) (string, string, error) {
+	regColumns, _ := regexp.Compile("select(.*)from(.*)")
+	regSelect, _ := regexp.Compile("select ")
+	regOrderBy, _ := regexp.Compile("order by (.*)")
+	querySqlBytes := []byte(strings.ToLower(querySql))
+	matchColumnsArr := regColumns.FindSubmatch(querySqlBytes)
+	matchOrderByArr := regOrderBy.FindSubmatch(querySqlBytes)
+
+	var removeSelect string
+	var columns string
+	var afterFrom string
+	var sqlCount string
+	var sqlPage string
+	var orderBy string
+
+	removeSelect = regSelect.ReplaceAllString(strings.ToLower(querySql), "")
+	removeSelect = regOrderBy.ReplaceAllString(removeSelect, "")
+
+	if len(matchColumnsArr) >= 2 {
+		columns = string(matchColumnsArr[1])
+	}
+
+	if len(matchColumnsArr) >= 3 {
+		afterFrom = string(matchColumnsArr[2])
+	}
+
+	if len(matchColumnsArr) == 0 {
+		return sqlCount, sqlPage, errors.New("创建分页SQL时出现异常")
+	}
+
+	if len(matchOrderByArr) == 2 {
+		orderBy = string(matchOrderByArr[1])
+	}
+
+	if strings.Contains(columns, "distinct ") {
+		sqlCount = fmt.Sprintf("select count(%v) AS Num from %v", columns, afterFrom)
+	} else {
+		sqlCount = fmt.Sprintf("select count(1) AS Num from %v", afterFrom)
+	}
+
+	switch strings.ToLower(database.DbType) {
+	case "mysql":
+		sqlPage = fmt.Sprintf("%v LIMIT %d OFFSET %d", querySql, take, skip)
+	case "mssql":
+		if strings.Contains(columns, "distinct ") {
+			columns = "peta_inner.* FROM (SELECT " + removeSelect + ") peta_inner"
+		}
+
+		if len(orderBy) == 0 {
+			orderBy = "ORDER BY (SELECT NULL)"
+		}
+
+		sqlPage = fmt.Sprintf("SELECT * FROM (SELECT ROW_NUMBER() OVER (%v) peta_rn, %v) peta_paged WHERE peta_rn > %d AND peta_rn <= %d", orderBy, removeSelect, skip, take+skip)
+	}
+
+	return sqlCount, sqlPage, nil
 }
