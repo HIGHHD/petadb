@@ -12,17 +12,17 @@ var database = petadb.NewDatabase("mysql", "mysql", "root:123456@/test?charset=u
 func main() {
 	database.IsDebug = true
 	// InsertTest()
-	// QueryStructTest()
+	QueryStructTest()
 	// QuerySbTest()
 	// QueryPrtTest()
 	// FirstTest()
 	// DeleteTest()
 	// BuildPageSql()
-	PagedListTest()
+	// PagedListTest()
 }
 
 func InsertTest() {
-	userInfo := UserInfo{UserName: "Deng", CreateDate: time.Now().String()}
+	userInfo := UserInfo{UserName: "Deng", CreateDate: time.Now()}
 	id, err := database.Insert(&userInfo)
 	if err != nil {
 		panic(err)
@@ -120,5 +120,5 @@ func BuildPageSql() {
 type UserInfo struct {
 	UserId     int `pk`
 	UserName   string
-	CreateDate string
+	CreateDate time.Time
 }

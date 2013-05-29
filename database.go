@@ -185,7 +185,7 @@ func (database *Database) Query(sliceInput interface{}, query string, args ...in
 
 	sliceElementType := sliceDataStruct.Type().Elem()
 	element := reflect.New(sliceElementType)
-	isStruct := sliceElementType.Kind() == reflect.Struct && sliceElementType.Kind().String() != "time.Time"
+	isStruct := sliceElementType.Kind() == reflect.Struct && sliceElementType.String() != "time.Time"
 
 	if isStruct {
 		query, err = database.addSelectClause(element.Interface(), query)
