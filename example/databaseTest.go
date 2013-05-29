@@ -72,18 +72,18 @@ func FirstTest() {
 }
 
 func DeleteTest() {
-	userInfl := UserInfo{}
+	userInfo := UserInfo{}
 
 	sb := petadb.NewSqlBuilder()
 	sb.Where("UserId = @0", 2)
 
-	isExists, err := database.FirstBySb(&userInfl, &sb)
+	isExists, err := database.FirstBySb(&userInfo, &sb)
 	if err != nil {
 		panic(err)
 	}
 
 	if isExists {
-		id, err := database.Delete(&userInfl)
+		id, err := database.Delete(&userInfo)
 		if err != nil {
 			panic(err)
 		}
