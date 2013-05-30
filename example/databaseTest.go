@@ -17,10 +17,9 @@ func main() {
 	// FindOneTest3()
 	// FindOneTest4()
 
-	// QueryTest1()
-	// QuerySqlTest()
+	FindListTest()
 
-	PagedListTest()
+	// PagedListTest()
 	// UpdateTest()
 }
 
@@ -101,6 +100,15 @@ func QueryTest1() {
 	fmt.Println(userList)
 }
 
+func FindListTest() {
+	var userList []UserInfo
+	if err := database.FindList(&userList, "SELECT * FROM UserInfo"); err != nil {
+		panic(err)
+	}
+
+	fmt.Println(userList)
+}
+
 func FindListSqlTest() {
 
 	sb := petadb.NewSqlBuilder()
@@ -118,6 +126,7 @@ func PagedListTest() {
 	var pagedInfo petadb.PagedInfo
 	userList := make([]UserInfo, 0)
 
+	// SQL语句会自动转换为分页语句(1.查询总数语句,2.查询列表语句)
 	if err := database.FindPagedList(&pagedInfo, &userList, 1, 10, "SELECT * FROM UserInfo"); err != nil {
 		panic(err)
 	}
@@ -128,12 +137,14 @@ func PagedListTest() {
 
 func UpdateTest() {
 	var userInfo UserInfo
+	// 取出要修改的对象
 	isEixsts, err := database.FindOne(&userInfo, "SELECT * FROM UserInfo WHERE UserName = 'gejin'")
 	if err != nil {
 		panic(err)
 	}
 
 	fmt.Println(isEixsts)
+	// 如果存在，则Update
 	if isEixsts {
 		fmt.Println(userInfo)
 
@@ -145,6 +156,28 @@ func UpdateTest() {
 
 		fmt.Println(row)
 		fmt.Println(userInfo)
+	}
+}
+
+func DeleteTest() {
+	var userInfo UserInfo
+	// 取出要修改的对象
+	isEixsts, err := database.FindOne(&userInfo, "SELECT * FROM UserInfo WHERE UserName = 'gejin'")
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(isEixsts)
+	// 如果存在，则Delete
+	if isEixsts {
+		fmt.Println(userInfo)
+
+		row, err := database.Delete(&userInfo)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Println(row)
 	}
 }
 

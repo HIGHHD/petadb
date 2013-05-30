@@ -68,4 +68,84 @@ func FindOneTest() {
 	}
 }
 ```
- 
+
+##### 修改 database.Update
+```go 
+func UpdateTest() {
+	var userInfo UserInfo
+	// 取出要修改的对象
+	isEixsts, err := database.FindOne(&userInfo, "SELECT * FROM UserInfo WHERE UserName = 'gejin'")
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(isEixsts)
+	// 如果存在，则Update
+	if isEixsts {
+		fmt.Println(userInfo)
+
+		userInfo.CreateDate = time.Now()
+		row, err := database.Update(&userInfo)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Println(row)
+		fmt.Println(userInfo)
+	}
+}
+```
+
+##### 删除 database.Delete 
+
+```go 
+func DeleteTest() {
+	var userInfo UserInfo
+	// 取出要修改的对象
+	isEixsts, err := database.FindOne(&userInfo, "SELECT * FROM UserInfo WHERE UserName = 'gejin'")
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(isEixsts)
+	// 如果存在，则Delete
+	if isEixsts {
+		fmt.Println(userInfo)
+
+		row, err := database.Delete(&userInfo)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Println(row)
+	}
+}
+```
+
+##### 查找列表 database.FindList
+```go  
+func FindListTest() {
+	var userList []UserInfo
+	if err := database.FindList(&userList, "SELECT * FROM UserInfo"); err != nil {
+		panic(err)
+	}
+
+	fmt.Println(userList)
+}
+```
+
+##### 分页查询  database.FindPagedList
+```go 
+func PagedListTest() {
+	var pagedInfo petadb.PagedInfo
+	userList := make([]UserInfo, 0)
+
+	// SQL语句会自动转换为分页语句(1.查询总数语句,2.查询列表语句)
+	if err := database.FindPagedList(&pagedInfo, &userList, 1, 10, "SELECT * FROM UserInfo"); err != nil {
+		panic(err)
+	}
+
+	fmt.Println(pagedInfo)
+	fmt.Println(userList)
+}
+```
