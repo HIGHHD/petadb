@@ -18,7 +18,8 @@ func main() {
 	// FindOneTest4()
 
 	// FindListTest()
-	FindListSqlTest()
+	// FindListSqlTest()
+	DeleteSqlTest()
 
 	// PagedListTest()
 	// UpdateTest()
@@ -109,6 +110,17 @@ func FindListSqlTest() {
 	}
 
 	fmt.Println(userList)
+}
+
+func DeleteSqlTest() {
+	sb := petadb.NewSqlBuilder()
+
+	sb.Where("UserId = @0", 1)
+	row, err := database.DeleteSql(&UserInfo{}, &sb)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(row)
 }
 
 func QueryTest1() {
