@@ -17,7 +17,8 @@ func main() {
 	// FindOneTest3()
 	// FindOneTest4()
 
-	FindListTest()
+	// FindListTest()
+	FindListSqlTest()
 
 	// PagedListTest()
 	// UpdateTest()
@@ -91,6 +92,25 @@ func FindOneTest4() {
 	}
 }
 
+func FindListSqlTest() {
+	sb := petadb.NewSqlBuilder()
+
+	sb.Where("UserId > @0", 1)
+	sb.Where("CreateDate < @0", time.Now())
+	// 当有多个查询条件时，Sql组装是一件非常痛苦的事情
+	// sqlBuilder应运而生，多个查询下，简单的sql.Where即可完全应对
+
+	var userList []UserInfo
+	// 什么？ 不需要写select ... from ??
+	// 对，不需要，组件会自动帮你匹配
+	err := database.FindListSql(&userList, &sb)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(userList)
+}
+
 func QueryTest1() {
 	var userList []UserInfo
 	if err := database.FindList(&userList, "SELECT * FROM UserInfo WHERE UserId > 1"); err != nil {
@@ -103,19 +123,6 @@ func QueryTest1() {
 func FindListTest() {
 	var userList []UserInfo
 	if err := database.FindList(&userList, "SELECT * FROM UserInfo"); err != nil {
-		panic(err)
-	}
-
-	fmt.Println(userList)
-}
-
-func FindListSqlTest() {
-
-	sb := petadb.NewSqlBuilder()
-	sb.Where("UserId > @0", 1)
-
-	userList := make([]UserInfo, 0)
-	if err := database.FindListSql(&userList, &sb); err != nil {
 		panic(err)
 	}
 

@@ -149,3 +149,29 @@ func PagedListTest() {
 	fmt.Println(userList)
 }
 ```
+
+### 强大的SQL组装器
+
+##### 例子1 database.FindListSqlTest
+```go 
+
+func FindListSqlTest() {
+	sb := petadb.NewSqlBuilder()
+
+	sb.Where("UserId > @0", 1)
+	sb.Where("CreateDate < @0", time.Now())
+	// 当有多个查询条件时，Sql组装是一件非常痛苦的事情
+	// sqlBuilder应运而生，多个查询下，简单的sql.Where即可完全应对
+
+	var userList []UserInfo
+	// 什么？ 不需要写select ... from ??
+	// 对，不需要，组件会自动帮你匹配
+	err := database.FindListSql(&userList, &sb)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(userList)
+}
+```
+
