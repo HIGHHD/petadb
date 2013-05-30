@@ -18,8 +18,8 @@ type Database struct {
 	IsDebug        bool
 }
 
-func NewDatabase(dbType string, driverName string, dataSourceName string, isDebug bool) Database {
-	return Database{DbType: dbType, DriverName: driverName, DataSourceName: dataSourceName, IsDebug: isDebug}
+func NewDatabase(dbType string, driverName string, dataSourceName string) Database {
+	return Database{DbType: dbType, DriverName: driverName, DataSourceName: dataSourceName, IsDebug: false}
 }
 
 func (database *Database) Insert(t interface{}) (int64, error) {

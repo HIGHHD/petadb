@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var database = petadb.NewDatabase("mysql", "mysql", "root:123456@/test?charset=utf8", false)
+var database = petadb.NewDatabase("mysql", "mysql", "root:123456@/test?charset=utf8")
 
 func main() {
 	//insertTest()
