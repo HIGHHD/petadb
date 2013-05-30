@@ -38,4 +38,34 @@ type UserInfo struct {
 	Other string `petadb:"notmap"`  // 不映射至数据表字段
 }
 ``` 
+
+##### 新增 database.Insert
+```go
+func insertTest() {
+	userInfo := UserInfo{UserName: "gejin", CreateDate: time.Now()}
+	id, err := database.Insert(&userInfo)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(userInfo)
+
+	fmt.Println(id)
+}
+```
+##### 查找第一条 database.FindOne
+```go 
+func FindOneTest() {
+	userInfo := UserInfo{}
+	isEixsts, err := database.FindOne(&userInfo, "SELECT * FROM UserInfo WHERE UserName = 'gejin'")
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(isEixsts)
+	// 是否存在
+	if isEixsts {
+		fmt.Println(userInfo)
+	}
+}
+```
  

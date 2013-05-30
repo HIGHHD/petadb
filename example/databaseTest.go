@@ -43,6 +43,7 @@ func FindOneTest() {
 	}
 
 	fmt.Println(isEixsts)
+	// 是否存在
 	if isEixsts {
 		fmt.Println(userInfo)
 	}
