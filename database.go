@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type Database struct {
@@ -16,71 +18,153 @@ type Database struct {
 	IsDebug        bool
 }
 
-type PagedList struct {
-	CurrentPageIndex int
-	PageSize         int
-	List             interface{}
-	TotalItemCount   int64
-	TotalPageCount   int64
+func NewDatabase(dbType string, driverName string, dataSourceName string, isDebug bool) Database {
+	return Database{DbType: dbType, DriverName: driverName, DataSourceName: dataSourceName, IsDebug: isDebug}
 }
 
-func NewDatabase(dbType string, driverName string, dataSourceName string) Database {
-	return Database{DbType: dbType, DataSourceName: dataSourceName, DriverName: driverName, IsDebug: false}
-}
-
-func (database *Database) PagedListSb(pagedList *PagedList, pageIndex int, pageSize int, sqlBuilder *SqlBuilder) error {
-	return database.PagedList(pagedList, pageIndex, pageSize, sqlBuilder.SQL, sqlBuilder.Args...)
-}
-
-func (database *Database) PagedList(pagedList *PagedList, pageIndex int, pageSize int, query string, args ...interface{}) error {
-	err := errors.New("")
-	sliceDataStruct := reflect.Indirect(reflect.ValueOf(pagedList.List))
-	if sliceDataStruct.Kind() != reflect.Slice {
-		return errors.New("请输入数组的指针对象")
+func (database *Database) Insert(t interface{}) (int64, error) {
+	mapper, err := getStructMapper(t)
+	if err != nil {
+		return -1, err
 	}
 
-	sliceElementType := sliceDataStruct.Type().Elem()
-	element := reflect.New(sliceElementType)
-	isStruct := sliceElementType.Kind() == reflect.Struct && sliceElementType.Kind().String() != "time.Time"
+	tableName := database.escapeTableName(mapper.TableName)
+	cols := make([]string, 0)
+	args := make([]interface{}, 0)
+	argHolders := make([]string, 0)
 
-	if isStruct {
-		query, err = database.addSelectClause(element.Interface(), query)
-		if err != nil {
-			return err
+	index := 0
+
+	for k, v := range mapper.Columns {
+		if strings.ToLower(k) == strings.ToLower(mapper.PrimaryKey) && mapper.AutoIncrement {
+			continue
 		}
+
+		cols = append(cols, fmt.Sprintf("%v.%v", tableName, database.escapeSqlIdentifier(k)))
+		args = append(args, v)
+		argHolders = append(argHolders, database.escapeParamHolder(index))
+		index++
 	}
 
-	if query, err = database.ProcessParam(query, args...); err != nil {
-		return err
+	query := fmt.Sprintf("INSERT INTO %v(%v) VALUES(%v)", tableName,
+		strings.Join(cols, ","),
+		strings.Join(argHolders, ","))
+
+	res, err := database.Execute(query, args...)
+	if mapper.AutoIncrement {
+		id, err := res.LastInsertId()
+		if err != nil {
+			return -1, err
+		}
+
+		reflect.Indirect(reflect.ValueOf(t)).FieldByName(mapper.PrimaryKey).SetInt(id)
+		return id, nil
 	}
 
-	sqlCount, sqlPage, err := database.BuildPagingQueries((pageIndex-1)*pageSize, pageSize, query)
+	row, err := res.RowsAffected()
 	if err != nil {
-		return err
+		return -1, err
 	}
-
-	_, err = database.First(pagedList.TotalItemCount, sqlCount, args...)
-	if err != nil {
-		return err
-	}
-	err = database.Query(pagedList.List, sqlPage, args...)
-	if err != nil {
-		return err
-	}
-
-	pagedList.TotalPageCount = int64(pagedList.TotalItemCount / int64(pageSize))
-	pagedList.PageSize = pageSize
-	pagedList.CurrentPageIndex = pageIndex
-
-	return nil
+	return row, nil
 }
 
-func (database *Database) FirstBySb(t interface{}, sqlBuilder *SqlBuilder) (bool, error) {
-	return database.First(t, sqlBuilder.SQL, sqlBuilder.Args...)
+func (database *Database) Update(t interface{}) (int64, error) {
+	mapper, err := getStructMapper(t)
+	if err != nil {
+		return -1, err
+	}
+
+	tableName := database.escapeTableName(mapper.TableName)
+	args := make([]interface{}, 0)
+	updates := make([]string, 0)
+
+	index := 0
+	for k, v := range mapper.Columns {
+		if strings.ToLower(k) == strings.ToLower(mapper.PrimaryKey) {
+			continue
+		}
+		args = append(args, v)
+		updates = append(updates, fmt.Sprintf("%v.%v = %v", tableName, database.escapeSqlIdentifier(k), database.escapeParamHolder(index)))
+		index++
+	}
+
+	condition := fmt.Sprintf("%v.%v = %v", tableName, database.escapeSqlIdentifier(mapper.PrimaryKey), database.escapeParamHolder(index))
+	args = append(args, mapper.Columns[mapper.PrimaryKey])
+
+	query := fmt.Sprintf("UPDATE %v SET %v WHERE %v", tableName, strings.Join(updates, ","), condition)
+	res, err := database.Execute(query, args...)
+	if err != nil {
+		return -1, err
+	}
+
+	rowAff, err := res.RowsAffected()
+	if err != nil {
+		return -1, err
+	}
+	return rowAff, nil
 }
 
-func (database *Database) First(t interface{}, query string, args ...interface{}) (bool, error) {
-	err := errors.New("")
+func (database *Database) UpdateSql(sqlBuilder *SqlBuilder) (int64, error) {
+	res, err := database.Execute(sqlBuilder.SQL, sqlBuilder.Args...)
+	if err != nil {
+		return -1, err
+	}
+
+	rowAff, err := res.RowsAffected()
+	if err != nil {
+		return -1, err
+	}
+	return rowAff, nil
+}
+
+func (database *Database) Delete(t interface{}) (int64, error) {
+	mapper, err := getStructMapper(t)
+	if err != nil {
+		return -1, err
+	}
+
+	args := make([]interface{}, 0)
+	args = append(args, mapper.Columns[mapper.PrimaryKey])
+	tableName := database.escapeTableName(mapper.TableName)
+	condition := fmt.Sprintf("%v.%v = %v", tableName, database.escapeSqlIdentifier(mapper.PrimaryKey), database.escapeParamHolder(0))
+
+	query := fmt.Sprintf("DELETE FROM %v WHERE %v", tableName, condition)
+	res, err := database.Execute(query, args...)
+	if err != nil {
+		return -1, err
+	}
+
+	rowAff, err := res.RowsAffected()
+	if err != nil {
+		return -1, err
+	}
+	return rowAff, nil
+}
+
+func (database *Database) DeleteSql(t interface{}, sqlBuilder *SqlBuilder) (int64, error) {
+	mapper, err := getStructMapper(t)
+	if err != nil {
+		return -1, err
+	}
+
+	tableName := database.escapeTableName(mapper.TableName)
+	query := fmt.Sprintf("DELETE FROM %v %v", tableName, sqlBuilder.SQL)
+
+	res, err := database.Execute(query, sqlBuilder.Args...)
+	if err != nil {
+		return -1, err
+	}
+
+	rowAff, err := res.RowsAffected()
+	if err != nil {
+		return -1, err
+	}
+	return rowAff, nil
+}
+
+func (database *Database) FindOne(t interface{}, query string, args ...interface{}) (bool, error) {
+
+	var err error
 	structData := reflect.Indirect(reflect.ValueOf(t))
 	structType := structData.Type()
 
@@ -93,92 +177,76 @@ func (database *Database) First(t interface{}, query string, args ...interface{}
 		}
 	}
 
-	if query, err = database.ProcessParam(query, args...); err != nil {
+	if query, err = database.processParam(query, args...); err != nil {
 		return false, err
 	}
 
-	if database.IsDebug {
-		fmt.Println(query)
-		fmt.Println(args)
-	}
-
-	db, err := sql.Open(database.DriverName, database.DataSourceName)
+	readerList, err := database.executeReader(query, args...)
 	if err != nil {
 		return false, err
 	}
 
-	stmt, err := db.Prepare(query)
-	if err != nil {
-		return false, err
+	isExists := len(readerList) > 0
+	if isExists {
+		err := readerToObject(t, readerList[0])
+		if err != nil {
+			return isExists, err
+		}
+	}
+	return isExists, nil
+}
+
+func (database *Database) FindOneSql(t interface{}, sqlBuilder *SqlBuilder) (bool, error) {
+	return database.FindOne(t, sqlBuilder.SQL, sqlBuilder.Args...)
+}
+
+func (database *Database) FindPagedList(pagedList *PagedList, pageIndex int, pageSize int, query string, args ...interface{}) (err error) {
+	sliceData := reflect.Indirect(reflect.ValueOf(pagedList.List))
+	if sliceData.Kind() != reflect.Slice {
+		return errors.New("请输入数组的指针对象")
 	}
 
-	rows, err := stmt.Query(args...)
-	if err != nil {
-		return false, err
-	}
-
-	cols, err := rows.Columns()
-	if err != nil {
-		return false, err
-	}
+	sliceElementType := sliceData.Type().Elem()
+	element := reflect.New(sliceElementType)
+	isStruct := sliceElementType.Kind() == reflect.Struct && sliceElementType.Kind().String() != "time.Time"
 
 	if isStruct {
-		tableInfo, err := GetTableInfo(t)
+		query, err = database.addSelectClause(element.Interface(), query)
 		if err != nil {
-			return false, err
-		}
-
-		colToFieldOffset := make([]int, len(cols))
-		for i := 0; i < len(cols); i++ {
-			colToFieldOffset[i] = -1
-			for k, _ := range tableInfo.Columns {
-				if strings.ToLower(k) == strings.ToLower(cols[i]) {
-					colToFieldOffset[i] = 1
-					break
-				}
-			}
-			if colToFieldOffset[i] == -1 {
-				return false, errors.New("查询的列与Struct不一致")
-			}
+			return err
 		}
 	}
 
-	isExists := false
-	for {
-		if !rows.Next() {
-			if err := rows.Err(); err != nil {
-				return false, err
-			}
-			break
-		}
-
-		dest := make([]interface{}, 0)
-		for i := 0; i < len(cols); i++ {
-			if isStruct {
-				dest = append(dest, structData.FieldByName(cols[i]).Addr().Interface())
-			} else {
-				dest = append(dest, structData.Interface())
-			}
-		}
-
-		if err := rows.Scan(dest...); err != nil {
-			return false, err
-		}
-		isExists = true
-		break
+	if query, err = database.processParam(query, args...); err != nil {
+		return err
 	}
 
-	return isExists, nil
+	sqlCount, sqlPage, err := database.buildPagingQueries((pageIndex-1)*pageSize, pageSize, query)
+	if err != nil {
+		return err
+	}
 
+	_, err = database.FindOne(&pagedList.TotalItemCount, sqlCount, args...)
+	if err != nil {
+		return err
+	}
+
+	if err := database.Query(pagedList.List, sqlPage, args...); err != nil {
+		return err
+	}
+
+	pagedList.TotalPageCount = int(pagedList.TotalItemCount / pageSize)
+	pagedList.CurrentPageIndex = pageIndex
+	pagedList.PageSize = pageSize
+
+	return nil
 }
 
-func (database *Database) QueryBySb(sliceInput interface{}, sqlBuilder *SqlBuilder) error {
-	return database.Query(sliceInput, sqlBuilder.SQL, sqlBuilder.Args...)
-}
+func (database *Database) Query(slice interface{}, query string, args ...interface{}) error {
+	var err error
 
-func (database *Database) Query(sliceInput interface{}, query string, args ...interface{}) error {
-	err := errors.New("")
-	sliceDataStruct := reflect.Indirect(reflect.ValueOf(sliceInput))
+	sliceDataStruct := reflect.Indirect(reflect.ValueOf(slice))
+	fmt.Println(sliceDataStruct.Kind())
 	if sliceDataStruct.Kind() != reflect.Slice {
 		return errors.New("请输入数组的指针对象")
 	}
@@ -194,216 +262,37 @@ func (database *Database) Query(sliceInput interface{}, query string, args ...in
 		}
 	}
 
-	if query, err = database.ProcessParam(query, args...); err != nil {
+	if query, err = database.processParam(query, args...); err != nil {
 		return err
 	}
 
-	if database.IsDebug {
-		fmt.Println(query)
-		fmt.Println(args)
-	}
-
-	db, err := sql.Open(database.DriverName, database.DataSourceName)
+	reader, err := database.executeReader(query, args...)
 	if err != nil {
 		return err
 	}
 
-	stmt, err := db.Prepare(query)
-	if err != nil {
-		return err
-	}
-
-	rows, err := stmt.Query(args...)
-	if err != nil {
-		return err
-	}
-
-	cols, err := rows.Columns()
-	if err != nil {
-		return err
-	}
-
-	if isStruct {
-		tableInfo, err := GetTableInfo(element.Interface())
+	for i := 0; i < len(reader); i++ {
+		newStructValue := reflect.New(sliceElementType)
+		err := readerToObject(newStructValue.Interface(), reader[i])
 		if err != nil {
 			return err
 		}
-
-		colToFieldOffset := make([]int, len(cols))
-		for i := 0; i < len(cols); i++ {
-			colToFieldOffset[i] = -1
-			for k, _ := range tableInfo.Columns {
-				if strings.ToLower(k) == strings.ToLower(cols[i]) {
-					colToFieldOffset[i] = 1
-					break
-				}
-			}
-			if colToFieldOffset[i] == -1 {
-				return errors.New("查询的列与Struct不一致")
-			}
-		}
+		sliceDataStruct.Set(reflect.Append(sliceDataStruct, reflect.Indirect(reflect.ValueOf(newStructValue.Interface()))))
 	}
-
-	for {
-		if !rows.Next() {
-			if err := rows.Err(); err != nil {
-				return err
-			}
-			break
-		}
-
-		v := reflect.New(sliceElementType)
-		dest := make([]interface{}, 0)
-		for i := 0; i < len(cols); i++ {
-			if isStruct {
-				dest = append(dest, v.Elem().FieldByName(cols[i]).Addr().Interface())
-			} else {
-				dest = append(dest, v.Interface())
-			}
-		}
-
-		if err := rows.Scan(dest...); err != nil {
-			return err
-		}
-		sliceDataStruct.Set(reflect.Append(sliceDataStruct, reflect.Indirect(reflect.ValueOf(v.Interface()))))
-	}
-
 	return nil
-
 }
 
-func (database *Database) DeleteBySb(t interface{}, sqlBuilder *SqlBuilder) (int64, error) {
-	tableInfo, err := GetTableInfo(t)
-	if err != nil {
-		return -1, err
-	}
-
-	tableName := database.escapeTableName(tableInfo.TableName)
-
-	query := fmt.Sprintf("DELETE FROM %v %v", tableName, sqlBuilder.SQL)
-	return database.execAndReturnRowsAffected(query, sqlBuilder.Args...)
+func (database *Database) QuerySql(slice interface{}, sqlBuilder *SqlBuilder) error {
+	return database.Query(slice, sqlBuilder.SQL, sqlBuilder.Args...)
 }
 
-func (database *Database) Delete(t interface{}) (int64, error) {
-	tableInfo, err := GetTableInfo(t)
-	if err != nil {
-		return -1, err
-	}
-
-	tableName := database.escapeTableName(tableInfo.TableName)
-	condition := fmt.Sprintf("%v.%v = %v", tableName, database.escapeSqlIdentifier(tableInfo.PrimaryKey), database.escapeParamHolder(0))
-	args := make([]interface{}, 0)
-	args = append(args, tableInfo.Columns[tableInfo.PrimaryKey])
-
-	query := fmt.Sprintf("DELETE FROM %v WHERE %v", tableName, condition)
-
-	return database.execAndReturnRowsAffected(query, args...)
-}
-
-func (database *Database) UpdateBySb(sqlBuilder *SqlBuilder) (int64, error) {
-	return database.execAndReturnRowsAffected(sqlBuilder.SQL, sqlBuilder.Args...)
-}
-
-func (database *Database) Update(t interface{}) (int64, error) {
-	tableInfo, err := GetTableInfo(t)
-	if err != nil {
-		return -1, err
-	}
-
-	tableName := database.escapeTableName(tableInfo.TableName)
-	args := make([]interface{}, 0)
-	updates := make([]string, 0)
-
-	index := 0
-	for k, v := range tableInfo.Columns {
-		if strings.ToLower(k) == strings.ToLower(tableInfo.PrimaryKey) {
-			continue
-		}
-
-		updates = append(updates, fmt.Sprintf("%v.%v = %v", tableName, database.escapeSqlIdentifier(k), database.escapeParamHolder(index)))
-		args = append(args, v)
-		index++
-	}
-
-	condition := fmt.Sprintf("%v.%v = %v", tableName, database.escapeSqlIdentifier(tableInfo.PrimaryKey), database.escapeParamHolder(index))
-	args = append(args, tableInfo.Columns[tableInfo.PrimaryKey])
-
-	query := fmt.Sprintf("UPDATE %v SET %v WHERE %v", tableName, strings.Join(updates, ","), condition)
-	return database.execAndReturnRowsAffected(query, args...)
-}
-
-func (database *Database) Insert(t interface{}) (int64, error) {
-	tableInfo, err := GetTableInfo(t)
-	if err != nil {
-		return -1, err
-	}
-
-	tableName := database.escapeTableName(tableInfo.TableName)
-	cols := make([]string, 0)
-	args := make([]interface{}, 0)
-	argsHolders := make([]string, 0)
-
-	index := 0
-	for k, v := range tableInfo.Columns {
-		if strings.ToLower(k) == strings.ToLower(tableInfo.PrimaryKey) && tableInfo.AutoIncrement {
-			continue
-		}
-
-		cols = append(cols, fmt.Sprintf("%v.%v", tableName, database.escapeSqlIdentifier(k)))
-		args = append(args, v)
-		argsHolders = append(argsHolders, database.escapeParamHolder(index))
-		index++
-	}
-
-	query := fmt.Sprintf("INSERT INTO %v(%v) VALUES(%v)", tableName, strings.Join(cols, ","), strings.Join(argsHolders, ","))
-
-	if tableInfo.AutoIncrement {
-		id, err := database.execAndReturnLastInsertId(query, args...)
-		if err != nil {
-			return -1, err
-		}
-		reflect.Indirect(reflect.ValueOf(t)).FieldByName(tableInfo.PrimaryKey).SetInt(id)
-		return id, nil
-	}
-
-	return database.execAndReturnRowsAffected(query, args...)
-}
-
-func (database *Database) execAndReturnRowsAffected(query string, args ...interface{}) (int64, error) {
-	res, err := database.Exec(query, args...)
-	if err != nil {
-		return -1, err
-	}
-
-	row, err := res.RowsAffected()
-	if err != nil {
-		return -1, nil
-	}
-	return row, nil
-}
-
-func (database *Database) execAndReturnLastInsertId(query string, args ...interface{}) (int64, error) {
-	res, err := database.Exec(query, args...)
-	if err != nil {
-		return -1, err
-	}
-
-	id, err := res.LastInsertId()
-	if err != nil {
-		return -1, err
-	}
-
-	return id, nil
-}
-
-func (database *Database) Exec(query string, args ...interface{}) (sql.Result, error) {
-
+func (database *Database) Execute(query string, args ...interface{}) (sql.Result, error) {
 	if database.IsDebug {
 		fmt.Println(query)
 		fmt.Println(args)
 	}
 
-	finalQuery, err := database.ProcessParam(query, args)
+	finalQuery, err := database.processParam(query, args)
 	if err != nil {
 		return nil, err
 	}
@@ -412,24 +301,23 @@ func (database *Database) Exec(query string, args ...interface{}) (sql.Result, e
 	if err != nil {
 		return nil, err
 	}
+	defer db.Close()
 
 	stmt, err := db.Prepare(finalQuery)
 	if err != nil {
 		return nil, err
 	}
+	defer stmt.Close()
 
 	res, err := stmt.Exec(args...)
 	if err != nil {
 		return nil, err
 	}
-
 	return res, nil
 }
 
-var regxParam = regexp.MustCompile("=\\s*\\@\\d*")
-
-func (database *Database) ProcessParam(query string, args ...interface{}) (string, error) {
-	regx, err := regexp.Compile("=\\s\\@\\d*")
+func (database *Database) processParam(query string, args ...interface{}) (string, error) {
+	regx, err := regexp.Compile("\\@\\d*")
 	if err != nil {
 		return query, err
 	}
@@ -438,10 +326,10 @@ func (database *Database) ProcessParam(query string, args ...interface{}) (strin
 	var finalSql string
 	switch strings.ToLower(database.DbType) {
 	case "mysql":
-		finalSql = regx.ReplaceAllString(query, "= ?")
+		finalSql = regx.ReplaceAllString(query, "?")
 	case "mssql":
 		finalSql = regx.ReplaceAllStringFunc(query, func(string) string {
-			str := fmt.Sprintf("= @%d", index)
+			str := fmt.Sprintf("@%d", index)
 			index++
 			return str
 		})
@@ -463,14 +351,14 @@ func (database *Database) addSelectClause(t interface{}, query string) (string, 
 	}
 
 	if !regxSelect.MatchString(strings.ToUpper(query)) {
-		tableInfo, err := GetTableInfo(t)
+		mapper, err := getStructMapper(t)
 		if err != nil {
 			return query, err
 		}
 
-		tableName := database.escapeTableName(tableInfo.TableName)
+		tableName := database.escapeTableName(mapper.TableName)
 		cols := make([]string, 0)
-		for k, _ := range tableInfo.Columns {
+		for k, _ := range mapper.Columns {
 			cols = append(cols, fmt.Sprintf("%v.%v", tableName, database.escapeSqlIdentifier(k)))
 		}
 
@@ -481,7 +369,6 @@ func (database *Database) addSelectClause(t interface{}, query string) (string, 
 		}
 	}
 	return query, nil
-
 }
 
 func (database *Database) escapeTableName(table string) string {
@@ -511,7 +398,89 @@ func (database *Database) escapeParamHolder(paramIndex int) string {
 	return ""
 }
 
-func (database *Database) BuildPagingQueries(skip int, take int, querySql string) (string, string, error) {
+func (database *Database) executeReader(query string, args ...interface{}) ([]map[string][]byte, error) {
+	if database.IsDebug {
+		fmt.Println(query)
+		fmt.Println(args)
+	}
+
+	db, err := sql.Open(database.DriverName, database.DataSourceName)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	stmt, err := db.Prepare(query)
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.Query(args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	var resultSlice []map[string][]byte
+
+	for rows.Next() {
+		result := make(map[string][]byte, 0)
+		var dest []interface{}
+		for i := 0; i < len(cols); i++ {
+			var destItem interface{}
+			dest = append(dest, &destItem)
+		}
+
+		if err := rows.Scan(dest...); err != nil {
+			return nil, err
+		}
+
+		for index, keyName := range cols {
+			colData := reflect.Indirect(reflect.ValueOf(dest[index]))
+			if colData.Interface() == nil {
+				continue
+			}
+
+			colType := reflect.TypeOf(colData.Interface())
+			colValue := reflect.ValueOf(colData.Interface())
+
+			var tempStr string
+			switch colType.Kind() {
+			case reflect.String:
+				tempStr = colValue.String()
+				result[keyName] = []byte(tempStr)
+			case reflect.Slice:
+				if colType.Elem().Kind() == reflect.Uint8 {
+					result[keyName] = colValue.Interface().([]byte)
+				}
+				break
+			case reflect.Float32, reflect.Float64:
+				tempStr = strconv.FormatFloat(colValue.Float(), 'f', -1, 64)
+				result[keyName] = []byte(tempStr)
+			case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Int:
+				tempStr = strconv.FormatInt(colValue.Int(), 10)
+				result[keyName] = []byte(tempStr)
+			case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uint:
+				tempStr = strconv.FormatUint(colValue.Uint(), 10)
+				result[keyName] = []byte(tempStr)
+			case reflect.Struct:
+				tempStr = colValue.Interface().(time.Time).Format("2006-01-02 15:04:05.000 -0700")
+				result[keyName] = []byte(tempStr)
+				fmt.Println(keyName)
+			}
+		}
+		resultSlice = append(resultSlice, result)
+	}
+	return resultSlice, nil
+}
+
+func (database *Database) buildPagingQueries(skip int, take int, querySql string) (sqlCount string, sqlPage string, err error) {
 	regColumns, _ := regexp.Compile("select(.*)from(.*)")
 	regSelect, _ := regexp.Compile("select ")
 	regOrderBy, _ := regexp.Compile("order by (.*)")
@@ -522,8 +491,6 @@ func (database *Database) BuildPagingQueries(skip int, take int, querySql string
 	var removeSelect string
 	var columns string
 	var afterFrom string
-	var sqlCount string
-	var sqlPage string
 	var orderBy string
 
 	removeSelect = regSelect.ReplaceAllString(strings.ToLower(querySql), "")

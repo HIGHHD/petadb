@@ -7,118 +7,147 @@ import (
 	"time"
 )
 
-var database = petadb.NewDatabase("mysql", "mysql", "root:123456@/test?charset=utf8")
+var database = petadb.NewDatabase("mysql", "mysql", "root:123456@/test?charset=utf8", true)
 
 func main() {
-	database.IsDebug = true
-	// InsertTest()
-	QueryStructTest()
-	// QuerySbTest()
-	// QueryPrtTest()
-	// FirstTest()
-	// DeleteTest()
-	// BuildPageSql()
+	// insertTest()
+
+	// FindOneTest()
+	// FindOneTest2()
+	// FindOneTest3()
+	// FindOneTest4()
+
+	// QueryTest1()
+	QuerySqlTest()
+
 	// PagedListTest()
+	// UpdateTest()
 }
 
-func InsertTest() {
-	userInfo := UserInfo{UserName: "Deng", CreateDate: time.Now()}
+func insertTest() {
+	userInfo := UserInfo{UserName: "gejin", CreateDate: time.Now()}
 	id, err := database.Insert(&userInfo)
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println(userInfo)
 
 	fmt.Println(id)
-	fmt.Println(userInfo.UserId)
 }
 
-func QueryStructTest() {
-	userList := make([]UserInfo, 0)
-	if err := database.Query(&userList, "SELECT * FROM UserInfo"); err != nil {
-		panic(err)
-	}
-	fmt.Println(userList)
-}
-
-func QuerySbTest() {
-	userList := make([]UserInfo, 0)
-
-	sb := petadb.NewSqlBuilder()
-	sb.Where("UserId = @0", 1)
-	sb.Where("UserName = @0", "Deng")
-
-	if err := database.QueryBySb(&userList, &sb); err != nil {
-		panic(err)
-	}
-	fmt.Println(userList)
-}
-
-func QueryPrtTest() {
-	userNameList := make([]string, 0)
-	if err := database.Query(&userNameList, "select UserName from UserInfo"); err != nil {
-		panic(err)
-	}
-
-	fmt.Println(userNameList)
-}
-
-func FirstTest() {
+func FindOneTest() {
 	userInfo := UserInfo{}
-	isExists, err := database.First(&userInfo, "select * from userInfo where userId = @0", 1)
+	isEixsts, err := database.FindOne(&userInfo, "SELECT * FROM UserInfo WHERE UserName = 'gejin'")
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(isEixsts)
+	if isEixsts {
+		fmt.Println(userInfo)
+	}
+}
+
+func FindOneTest2() {
+	var userId int
+	isExists, err := database.FindOne(&userId, "SELECT UserId FROM UserInfo WHERE UserName = 'gejin'")
 	if err != nil {
 		panic(err)
 	}
 
 	fmt.Println(isExists)
-	fmt.Println(userInfo)
+	if isExists {
+		fmt.Println(userId)
+	}
 }
 
-func DeleteTest() {
-	userInfo := UserInfo{}
-
-	sb := petadb.NewSqlBuilder()
-	sb.Where("UserId = @0", 2)
-
-	isExists, err := database.FirstBySb(&userInfo, &sb)
+func FindOneTest3() {
+	var createDate time.Time
+	isExists, err := database.FindOne(&createDate, "SELECT CreateDate FROM UserInfo WHERE UserName = 'gejin'")
 	if err != nil {
 		panic(err)
 	}
 
+	fmt.Println(isExists)
 	if isExists {
-		id, err := database.Delete(&userInfo)
-		if err != nil {
-			panic(err)
-		}
+		fmt.Println(createDate)
+	}
+}
 
-		fmt.Println(id)
+func FindOneTest4() {
+	sb := petadb.NewSqlBuilder()
+	sb.Where("UserName = @0", "gejin")
+	sb.Where("UserId = @0", 12)
+
+	var userInfo UserInfo
+	isExists, err := database.FindOneSql(&userInfo, &sb)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(isExists)
+	if isExists {
+		fmt.Println(userInfo)
+	}
+}
+
+func QueryTest1() {
+	var userList []UserInfo
+	if err := database.Query(&userList, "SELECT * FROM UserInfo WHERE UserId > 1"); err != nil {
+		panic(err)
+	}
+
+	fmt.Println(userList)
+}
+
+func QuerySqlTest() {
+	var userList []UserInfo
+
+	sb := petadb.NewSqlBuilder()
+	sb.Where("UserId > @0", 1)
+
+	var pagedList petadb.PagedList
+	pagedList.List = userList
+	if err := database.QuerySql(pagedList.List, &sb); err != nil {
+		panic(err)
 	}
 }
 
 func PagedListTest() {
-	sb := petadb.NewSqlBuilder()
-	sb.Append("SELECT * FROM UserInfo WHERE UserId = @0", 1)
-	pagedList := petadb.PagedList{}
+	var pagedList petadb.PagedList
 	pagedList.List = make([]UserInfo, 0)
-	err := database.PagedListSb(&pagedList, 1, 10, &sb)
-	if err != nil {
+
+	if err := database.FindPagedList(&pagedList, 1, 10, "SELECT * FROM UserInfo"); err != nil {
 		panic(err)
 	}
 
 	fmt.Println(pagedList)
 }
 
-func BuildPageSql() {
-	sqlCount, sqlPage, err := database.BuildPagingQueries(10, 10, "SELECT DISTINCT UserId FROM UserInfo WHERE CreateDate > ?")
+func UpdateTest() {
+	var userInfo UserInfo
+	isEixsts, err := database.FindOne(&userInfo, "SELECT * FROM UserInfo WHERE UserName = 'gejin'")
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println(sqlCount)
-	fmt.Println(sqlPage)
+	fmt.Println(isEixsts)
+	if isEixsts {
+		fmt.Println(userInfo)
+
+		userInfo.CreateDate = time.Now()
+		row, err := database.Update(&userInfo)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Println(row)
+		fmt.Println(userInfo)
+	}
 }
 
 type UserInfo struct {
-	UserId     int `pk`
+	UserId     int `petadb:"pk"`
 	UserName   string
 	CreateDate time.Time
 }
