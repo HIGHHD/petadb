@@ -200,6 +200,10 @@ func (database *Database) FindOneSql(t interface{}, sqlBuilder *SqlBuilder) (boo
 	return database.FindOne(t, sqlBuilder.SQL, sqlBuilder.Args...)
 }
 
+func (database *Database) FindPagedListSql(pageInfo *PagedInfo, slice interface{}, pageIndex int, pageSize int, sqlBuilder *SqlBuilder) error {
+	return database.FindPagedList(pageInfo, slice, pageIndex, pageSize, sqlBuilder.SQL, sqlBuilder.Args...)
+}
+
 func (database *Database) FindPagedList(pagedInfo *PagedInfo, slice interface{}, pageIndex int, pageSize int, query string, args ...interface{}) (err error) {
 	sliceData := reflect.Indirect(reflect.ValueOf(slice))
 	if sliceData.Kind() != reflect.Slice {
