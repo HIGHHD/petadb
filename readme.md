@@ -32,11 +32,10 @@ poco实体类：
 ```go
 
 type UserInfo struct {
-	UserId     int `petadb:"pk"` // 主键自增，若属性名为Id时，则默认为自增主键
+	UserId     int `petadb:"pk"` // 主键自增，若属性名为Id时，则默认为自增主键，非自增主键：pk_notai
 	UserName   string
 	CreateDate time.Time
 	Other string `petadb:"notmap"`  // 不映射至数据表字段
 }
-```
-映射规则：
+``` 
  
