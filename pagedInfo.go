@@ -1,9 +1,8 @@
 package petadb
 
-type PagedList struct {
+type PagedInfo struct {
 	CurrentPageIndex int
 	PageSize         int
-	List             interface{}
 	TotalItemCount   int
 	TotalPageCount   int
 }

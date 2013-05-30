@@ -7,10 +7,10 @@ import (
 	"time"
 )
 
-var database = petadb.NewDatabase("mysql", "mysql", "root:123456@/test?charset=utf8", true)
+var database = petadb.NewDatabase("mysql", "mysql", "root:123456@/test?charset=utf8", false)
 
 func main() {
-	// insertTest()
+	//insertTest()
 
 	// FindOneTest()
 	// FindOneTest2()
@@ -18,9 +18,9 @@ func main() {
 	// FindOneTest4()
 
 	// QueryTest1()
-	QuerySqlTest()
+	// QuerySqlTest()
 
-	// PagedListTest()
+	PagedListTest()
 	// UpdateTest()
 }
 
@@ -93,35 +93,36 @@ func FindOneTest4() {
 
 func QueryTest1() {
 	var userList []UserInfo
-	if err := database.Query(&userList, "SELECT * FROM UserInfo WHERE UserId > 1"); err != nil {
+	if err := database.FindList(&userList, "SELECT * FROM UserInfo WHERE UserId > 1"); err != nil {
 		panic(err)
 	}
 
 	fmt.Println(userList)
 }
 
-func QuerySqlTest() {
-	var userList []UserInfo
+func FindListSqlTest() {
 
 	sb := petadb.NewSqlBuilder()
 	sb.Where("UserId > @0", 1)
 
-	var pagedList petadb.PagedList
-	pagedList.List = userList
-	if err := database.QuerySql(pagedList.List, &sb); err != nil {
+	userList := make([]UserInfo, 0)
+	if err := database.FindListSql(&userList, &sb); err != nil {
 		panic(err)
 	}
+
+	fmt.Println(userList)
 }
 
 func PagedListTest() {
-	var pagedList petadb.PagedList
-	pagedList.List = make([]UserInfo, 0)
+	var pagedInfo petadb.PagedInfo
+	userList := make([]UserInfo, 0)
 
-	if err := database.FindPagedList(&pagedList, 1, 10, "SELECT * FROM UserInfo"); err != nil {
+	if err := database.FindPagedList(&pagedInfo, &userList, 1, 10, "SELECT * FROM UserInfo"); err != nil {
 		panic(err)
 	}
 
-	fmt.Println(pagedList)
+	fmt.Println(pagedInfo)
+	fmt.Println(userList)
 }
 
 func UpdateTest() {

@@ -200,8 +200,8 @@ func (database *Database) FindOneSql(t interface{}, sqlBuilder *SqlBuilder) (boo
 	return database.FindOne(t, sqlBuilder.SQL, sqlBuilder.Args...)
 }
 
-func (database *Database) FindPagedList(pagedList *PagedList, pageIndex int, pageSize int, query string, args ...interface{}) (err error) {
-	sliceData := reflect.Indirect(reflect.ValueOf(pagedList.List))
+func (database *Database) FindPagedList(pagedInfo *PagedInfo, slice interface{}, pageIndex int, pageSize int, query string, args ...interface{}) (err error) {
+	sliceData := reflect.Indirect(reflect.ValueOf(slice))
 	if sliceData.Kind() != reflect.Slice {
 		return errors.New("请输入数组的指针对象")
 	}
@@ -226,27 +226,26 @@ func (database *Database) FindPagedList(pagedList *PagedList, pageIndex int, pag
 		return err
 	}
 
-	_, err = database.FindOne(&pagedList.TotalItemCount, sqlCount, args...)
+	_, err = database.FindOne(&pagedInfo.TotalItemCount, sqlCount, args...)
 	if err != nil {
 		return err
 	}
 
-	if err := database.Query(pagedList.List, sqlPage, args...); err != nil {
+	if err := database.FindList(slice, sqlPage, args...); err != nil {
 		return err
 	}
 
-	pagedList.TotalPageCount = int(pagedList.TotalItemCount / pageSize)
-	pagedList.CurrentPageIndex = pageIndex
-	pagedList.PageSize = pageSize
+	pagedInfo.TotalPageCount = int(pagedInfo.TotalItemCount / pageSize)
+	pagedInfo.CurrentPageIndex = pageIndex
+	pagedInfo.PageSize = pageSize
 
 	return nil
 }
 
-func (database *Database) Query(slice interface{}, query string, args ...interface{}) error {
+func (database *Database) FindList(slice interface{}, query string, args ...interface{}) error {
 	var err error
 
 	sliceDataStruct := reflect.Indirect(reflect.ValueOf(slice))
-	fmt.Println(sliceDataStruct.Kind())
 	if sliceDataStruct.Kind() != reflect.Slice {
 		return errors.New("请输入数组的指针对象")
 	}
@@ -282,8 +281,8 @@ func (database *Database) Query(slice interface{}, query string, args ...interfa
 	return nil
 }
 
-func (database *Database) QuerySql(slice interface{}, sqlBuilder *SqlBuilder) error {
-	return database.Query(slice, sqlBuilder.SQL, sqlBuilder.Args...)
+func (database *Database) FindListSql(slice interface{}, sqlBuilder *SqlBuilder) error {
+	return database.FindList(slice, sqlBuilder.SQL, sqlBuilder.Args...)
 }
 
 func (database *Database) Execute(query string, args ...interface{}) (sql.Result, error) {
