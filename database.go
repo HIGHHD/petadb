@@ -51,6 +51,10 @@ func (database *Database) Insert(t interface{}) (int64, error) {
 		strings.Join(argHolders, ","))
 
 	res, err := database.Execute(query, args...)
+	if err != nil {
+	  return -1, err
+  }
+
 	if mapper.AutoIncrement {
 		id, err := res.LastInsertId()
 		if err != nil {
